@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>XLS Barcode Generator</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    h1 {
+      text-align: center;
+    }
+    .upload-form {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .upload-form input[type="file"] {
+      margin-right: 10px;
+    }
+    .upload-form select {
+      margin-right: 10px;
+    }
+    .barcode-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .barcode-table th, .barcode-table td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    .barcode-table th {
+      background-color: #f0f0f0;
+    }
+    .barcode-img {
+      max-width: 200px;
+      max-height: 200px;
+    }
+    .error {
+      color: red;
+    }
+
+    .upload-form {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.upload-form button {
+  margin-right: 10px; /* 在按钮右侧添加间隔 */
+}
+
+/* 其他样式保持不变 */
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>XLS Barcode Generator</h1>
+    <form class="upload-form" id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+      <input type="file" name="uploadedFile" />
+      <select id="barcodeType" name="barcodeType">
+        <option value="EAN-13">EAN-13</option>
+        <option value="code128B">Code 128B</option>
+      </select>
+      <button type="submit">Generate Barcode</button>
+      <button id="saveToJSONButton" disabled>Save to JSON</button>
+      <button id="saveToXLSXButton" disabled>Save to XLSX</button>
+    </form>
+    <table class="barcode-table" id="barcodes">
+      <tr>
+        <th>物资编码</th>
+        <th>物资名称</th>
+        <th>条形码</th>
+        <th>生成的条形码</th>
+      </tr>
+    </table>
+    <div id="error-message" class="error"></div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+    const errorMessageDiv = document.getElementById('error-message');
+    const saveToJSONButton = document.getElementById('saveToJSONButton');
+    const saveToXLSXButton = document.getElementById('saveToXLSXButton');
+    let xlsxReady = false;
+
+    document.getElementById('uploadForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData();
+      formData.append('uploadedFile', document.querySelector('input[type="file"]').files[0]);
+      const barcodeType = document.querySelector('#barcodeType').value;
+
+      fetch('/upload?barcodeType=' + barcodeType, {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => {
+          if (response.ok) {
+            return response.json();
+          } else {
+            response.text().then(errorMessage => {
+              errorMessageDiv.textContent = errorMessage;
+            });
+            throw new Error('Error uploading file');
+          }
+        })
+        .then(data => {
+          const barcodeTable = document.getElementById('barcodes');
+          data.forEach(item => {
+            const row = barcodeTable.insertRow();
+
+            const materialCodeCell = row.insertCell(0);
+            materialCodeCell.textContent = item.materialCode;
+
+            const materialNameCell = row.insertCell(1);
+            materialNameCell.textContent = item.materialName;
+
+            const barcodeCell = row.insertCell(2);
+            barcodeCell.textContent = item.barcode;
+
+            const imgCell = row.insertCell(3);
+            const img = document.createElement('img');
+            img.src = `data:image/png;base64,${item.png}`;
+            img.className = 'barcode-img';
+            imgCell.appendChild(img);
+          });
+
+          saveToJSONButton.disabled = false;
+          saveToJSONButton.dataset.barcodes = JSON.stringify(data);
+          saveToXLSXButton.disabled = false;
+          saveToXLSXButton.dataset.barcodes = JSON.stringify(data);
+        });
+    });
+
+    saveToJSONButton.addEventListener('click', () => {
+      const barcodesData = saveToJSONButton.dataset.barcodes;
+      if (barcodesData) {
+        const jsonContent = JSON.stringify({ barcodes: JSON.parse(barcodesData) }, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'barcodes.json';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+      }
+    });
+
+    saveToXLSXButton.addEventListener('click', () => {
+      if (xlsxReady) {
+        const barcodesData = saveToXLSXButton.dataset.barcodes;
+        if (barcodesData) {
+          const jsonData = JSON.parse(barcodesData);
+          const ws = XLSX.utils.json_to_sheet(jsonData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Barcodes");
+          XLSX.writeFile(wb, 'barcodes.xlsx');
+        }
+      }
+    });
+
+    const checkXLSXReady = () => {
+      if (typeof XLSX === 'undefined') {
+        setTimeout(checkXLSXReady, 100);
+      } else {
+        xlsxReady = true;
+      }
+    };
+
+    checkXLSXReady();
+  </script>
+</body>
+</html>
